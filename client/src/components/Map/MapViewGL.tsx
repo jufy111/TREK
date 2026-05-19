@@ -1,11 +1,11 @@
-import { useEffect, useRef, useMemo, useState, createElement } from 'react'
+import { useEffect, useRef, useMemo, useState, useCallback, createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { useSettingsStore } from '../../store/settingsStore'
 import { useAuthStore } from '../../store/authStore'
 import { getCached, isLoading, fetchPhoto, onThumbReady, getAllThumbs } from '../../services/photoService'
-import { CATEGORY_ICON_MAP } from '../shared/categoryIcons'
+import { CATEGORY_ICON_MAP, getCategoryIcon } from '../shared/categoryIcons'
 import { isStandardFamily, supportsCustom3d, wantsTerrain, addCustom3dBuildings, addTerrainAndSky } from './mapboxSetup'
 import { attachLocationMarker, type LocationMarkerHandle } from './locationMarkerMapbox'
 import { ReservationMapboxOverlay } from './reservationsMapbox'
@@ -171,6 +171,19 @@ export function MapViewGL({
   onClickRefs.current.marker = onMarkerClick
   onClickRefs.current.map = onMapClick
   onClickRefs.current.context = onMapContextMenu
+
+  const [hoveredPlace, setHoveredPlace] = useState<Place | null>(null)
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null)
+  const isTouchDevice = typeof window !== 'undefined' && navigator.maxTouchPoints > 0
+
+  const handleMarkerHover = useCallback((place: Place, x: number, y: number) => {
+    setHoveredPlace(place)
+    setTooltipPos({ x, y })
+  }, [])
+
+  const handleMarkerHoverOut = useCallback(() => {
+    setHoveredPlace(null)
+  }, [])
 
   // Build/rebuild the map on style/token/3d change
   useEffect(() => {
@@ -412,6 +425,15 @@ export function MapViewGL({
         ev.stopPropagation()
         onClickRefs.current.marker?.(place.id)
       })
+      el.addEventListener('mouseenter', (ev) => {
+        handleMarkerHover(place as Place, ev.clientX, ev.clientY)
+      })
+      el.addEventListener('mousemove', (ev) => {
+        setTooltipPos({ x: ev.clientX, y: ev.clientY })
+      })
+      el.addEventListener('mouseleave', () => {
+        handleMarkerHoverOut()
+      })
       // Recreate marker each time rather than patching internal state —
       // mapbox-gl's internal _element bookkeeping breaks under DOM swaps.
       const existing = markersRef.current.get(place.id)
@@ -603,6 +625,9 @@ export function MapViewGL({
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
   const buttonBottom = 'calc(var(--bottom-nav-h, 84px) + 12px)'
 
+  const TooltipOverlay = hoveredPlace && tooltipPos && !isTouchDevice
+  const CatIcon = TooltipOverlay ? getCategoryIcon((hoveredPlace as any).category_icon) : null
+
   return (
     <div className="w-full h-full relative">
       <div ref={containerRef} className="w-full h-full" />
@@ -613,6 +638,37 @@ export function MapViewGL({
           onClick={cycleTrackingMode}
           bottomOffset={buttonBottom as unknown as number}
         />
+      )}
+      {TooltipOverlay && (
+        <div data-testid="tooltip" style={{
+          position: 'fixed',
+          left: tooltipPos.x + 14,
+          top: tooltipPos.y - 10,
+          zIndex: 9999,
+          pointerEvents: 'none',
+          background: 'white',
+          borderRadius: 8,
+          boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+          padding: '6px 10px',
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
+          maxWidth: 220,
+          whiteSpace: 'nowrap',
+        }}>
+          <div style={{ fontWeight: 600, fontSize: 12, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {hoveredPlace.name}
+          </div>
+          {(hoveredPlace as any).category_name && CatIcon && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 1 }}>
+              <CatIcon size={10} style={{ color: (hoveredPlace as any).category_color || '#6b7280', flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: '#6b7280' }}>{(hoveredPlace as any).category_name}</span>
+            </div>
+          )}
+          {(hoveredPlace as any).address && (
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {(hoveredPlace as any).address}
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
