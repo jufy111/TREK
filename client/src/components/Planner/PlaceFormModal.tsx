@@ -226,7 +226,7 @@ export default function PlaceFormModal({
     }
   }
 
-  const handleSelectMapsResult = (result) => {
+  const handleSelectMapsResult = async (result) => {
     setForm(prev => ({
       ...prev,
       name: result.name || prev.name,
@@ -237,9 +237,19 @@ export default function PlaceFormModal({
       osm_id: result.osm_id || prev.osm_id,
       website: result.website || prev.website,
       phone: result.phone || prev.phone,
+      description: result.summary || prev.description,
     }))
     setMapsResults([])
     setMapsSearch('')
+
+    if (!result.summary && result.google_place_id) {
+      try {
+        const details = await mapsApi.details(result.google_place_id, language, true)
+        if (details.place?.summary) {
+          setForm(prev => ({ ...prev, description: prev.description || details.place.summary }))
+        }
+      } catch {}
+    }
   }
 
   const handleSelectSuggestion = async (suggestion: { placeId: string; mainText: string; secondaryText: string }) => {
@@ -250,7 +260,7 @@ export default function PlaceFormModal({
     setForm(prev => ({ ...prev, name: suggestion.mainText }))
     setIsSearchingMaps(true)
     try {
-      const result = await mapsApi.details(suggestion.placeId, language)
+      const result = await mapsApi.details(suggestion.placeId, language, true)
       if (result.place) {
         handleSelectMapsResult(result.place)
       } else {
