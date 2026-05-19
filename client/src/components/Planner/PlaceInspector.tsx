@@ -3,12 +3,13 @@ import { openFile } from '../../utils/fileDownload'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
-import { X, Clock, MapPin, ExternalLink, Phone, Euro, Edit2, Trash2, Plus, Minus, ChevronDown, ChevronUp, FileText, Upload, File, FileImage, Star, Navigation, Users, Mountain, TrendingUp } from 'lucide-react'
+import { X, Clock, MapPin, ExternalLink, Phone, Euro, Edit2, Trash2, Plus, Minus, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, FileText, Upload, File, FileImage, Star, Navigation, Users, Mountain, TrendingUp } from 'lucide-react'
 import PlaceAvatar from '../shared/PlaceAvatar'
 import { mapsApi } from '../../api/client'
 import { useSettingsStore } from '../../store/settingsStore'
 import { getCategoryIcon } from '../shared/categoryIcons'
 import { useTranslation } from '../../i18n'
+import { useAuthStore } from '../../store/authStore'
 import type { Place, Category, Day, Assignment, Reservation, TripFile, AssignmentsMap } from '../../types'
 
 const detailsCache = new Map()
@@ -40,6 +41,33 @@ function usePlaceDetails(googlePlaceId, osmId, language) {
     }).catch(() => {})
   }, [detailId, language])
   return details
+}
+
+const photosCache = new Map<string, { photoUrl: string; attribution: string | null }[]>()
+
+function usePlacePhotos(googlePlaceId: string | null | undefined) {
+  const [photos, setPhotos] = useState<{ photoUrl: string; attribution: string | null }[]>([])
+  const placesPhotosEnabled = useAuthStore(s => s.placesPhotosEnabled)
+
+  useEffect(() => {
+    if (!googlePlaceId || !placesPhotosEnabled) { setPhotos([]); return }
+
+    if (photosCache.has(googlePlaceId)) {
+      setPhotos(photosCache.get(googlePlaceId)!)
+      return
+    }
+
+    mapsApi.placePhotos(googlePlaceId).then((data: { photos?: { photoUrl: string; attribution: string | null }[] }) => {
+      const p = data.photos || []
+      photosCache.set(googlePlaceId, p)
+      setPhotos(p)
+    }).catch(() => {
+      photosCache.set(googlePlaceId, [])
+      setPhotos([])
+    })
+  }, [googlePlaceId, placesPhotosEnabled])
+
+  return photos
 }
 
 function getWeekdayIndex(dateStr) {
@@ -144,6 +172,10 @@ export default function PlaceInspector({
   const nameInputRef = useRef(null)
   const fileInputRef = useRef(null)
   const googleDetails = usePlaceDetails(place?.google_place_id, place?.osm_id, language)
+  const placePhotos = usePlacePhotos(place?.google_place_id)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+
+  useEffect(() => { setLightboxIndex(null) }, [place?.id])
 
   const startNameEdit = () => {
     if (!onUpdatePlace) return
@@ -306,6 +338,67 @@ export default function PlaceInspector({
             <X size={14} strokeWidth={2} color="var(--text-secondary)" />
           </button>
         </div>
+
+        {/* Photo Gallery — row of thumbnails */}
+        {placePhotos.length > 0 && (
+          <div style={{ display: 'flex', width: '100%', height: 180, flexShrink: 0, overflow: 'hidden', borderBottom: '1px solid var(--border-faint)' }}>
+            {placePhotos.map((photo, i) => (
+              <button
+                key={i}
+                onClick={() => setLightboxIndex(i)}
+                style={{ flex: 1, minWidth: 0, height: '100%', padding: 0, border: 'none', cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
+              >
+                <img
+                  src={photo.photoUrl}
+                  alt={`${place.name} ${i + 1}`}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Photo Lightbox */}
+        {lightboxIndex !== null && placePhotos[lightboxIndex] && (
+          <div
+            onClick={() => setLightboxIndex(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}
+          >
+            <button
+              onClick={e => { e.stopPropagation(); setLightboxIndex(null) }}
+              style={{ position: 'absolute', top: 16, right: 16, width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <X size={20} color="red" />
+            </button>
+            {placePhotos.length > 1 && (
+              <>
+                <button
+                  onClick={e => { e.stopPropagation(); setLightboxIndex(i => (i! - 1 + placePhotos.length) % placePhotos.length) }}
+                  style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <ChevronLeft size={22} color="white" />
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); setLightboxIndex(i => (i! + 1) % placePhotos.length) }}
+                  style={{ position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)', width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <ChevronRight size={22} color="white" />
+                </button>
+              </>
+            )}
+            <img
+              onClick={e => e.stopPropagation()}
+              src={placePhotos[lightboxIndex].photoUrl}
+              alt={place.name}
+              style={{ maxWidth: '90vw', maxHeight: '85vh', objectFit: 'contain', borderRadius: 8, cursor: 'default' }}
+            />
+            {placePhotos[lightboxIndex].attribution && (
+              <span style={{ position: 'absolute', bottom: 20, right: 20, fontSize: 11, color: 'rgba(255,255,255,0.8)', background: 'rgba(0,0,0,0.5)', padding: '3px 8px', borderRadius: 6 }}>
+                {placePhotos[lightboxIndex].attribution}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Content — scrollable */}
         <div style={{ overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>

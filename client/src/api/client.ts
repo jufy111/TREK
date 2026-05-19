@@ -442,6 +442,7 @@ export const mapsApi = {
       apiClient.post('/maps/autocomplete', { input, lang, locationBias }, { signal }).then(r => r.data),
   details: (placeId: string, lang?: string) => apiClient.get(`/maps/details/${encodeURIComponent(placeId)}`, { params: { lang } }).then(r => r.data),
   placePhoto: (placeId: string, lat?: number, lng?: number, name?: string) => apiClient.get(`/maps/place-photo/${encodeURIComponent(placeId)}`, { params: { lat, lng, name } }).then(r => r.data),
+  placePhotos: (placeId: string) => apiClient.get(`/maps/place-photos/${encodeURIComponent(placeId)}`).then(r => r.data),
   reverse: (lat: number, lng: number, lang?: string) => apiClient.get('/maps/reverse', { params: { lat, lng, lang } }).then(r => r.data),
   resolveUrl: (url: string) => apiClient.post('/maps/resolve-url', { url }).then(r => r.data),
 }
